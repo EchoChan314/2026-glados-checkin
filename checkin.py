@@ -292,7 +292,9 @@ def main():
         
         # 3. Log
         status_icon = "✅" if is_success else "❌"
-        log(f"{status_icon} 用户: {g.email} | 积分: {g.points} | 天数: {g.left_days} | 结果: {msg}")
+        # Actions logs are public in a public repository. Keep account details
+        # inside the private notification instead of exposing the email here.
+        log(f"{status_icon} 账号 {i} | 积分: {g.points} | 天数: {g.left_days} | 结果: {msg}")
         
         if is_success:
             success_cnt += 1
