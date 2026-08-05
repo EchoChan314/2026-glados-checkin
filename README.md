@@ -1,10 +1,10 @@
-# 🎁 每天+20积分，5分钟搞定 GLaDOS 自动签到
+# 🎁 5 分钟配置 GLaDOS 自动签到
 
 <div align="center">
 
 **你不用写代码 · 不用买服务器 · 不用每天登录**
 
-**一次配置，永久自动，每天 9:30 / 21:30 签到**
+**一次配置，每天 9:30 自动签到；失败自动重试**
 
 ---
 
@@ -12,8 +12,8 @@
 
 | 优势                  | 说明                                                |
 | --------------------- | --------------------------------------------------- |
-| ✅ **2026年验证可用** | 经过实测，确认在2026年4月20日正常工作               |
-| ✅ **绝对可用**       | 修复了其他脚本失效的问题（token更新为glados.cloud） |
+| ✅ **2026年验证可用** | 持续通过 Actions 日志和单元测试验证                 |
+| ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
 | ✅ **新手友好**       | 全程图解，不会也能照着做                            |
 | ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
 
@@ -27,7 +27,7 @@
 
 ---
 
-### 🚀 3步搞定，永久自动签到
+### 🚀 3 步完成自动签到
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -36,7 +36,7 @@
 │                                                             │
 │   ② 配置 Cookie  ──→  浏览器复制一下，贴到 GitHub Secrets    │
 │                                                             │
-│   ③ 配置 cron    ──→  5分钟填好，永久有效                    │
+│   ③ 启用 Actions  ──→  手动测试一次，之后每天自动运行         │
 │                                                             │
 │   ✅ 完成！每天自动签到 + 微信通知                            │
 │                                                             │
@@ -58,13 +58,13 @@
 
 ## 💡 重要说明
 
-> 为了确保定时签到稳定运行，推荐使用 **cron-job.org**（免费服务）来触发签到。
+> 默认只使用仓库内置的 **GitHub Actions** 定时任务，无需创建外部 cron。
 >
-> GitHub Actions 的自带定时功能对新仓库不太稳定，可能不会自动触发。
+> 本项目每月自动提交一次保活时间戳，避免公开仓库因 60 天无活动而停用计划任务。
 >
-> **别担心！** 配置 cron-job.org 只需要额外 5 分钟，一次搞定永久有效。
+> `cron-job.org` 仅作为可选备用方案。**内置 schedule 与外部 cron 二选一**，同时启用会重复签到和重复通知。
 >
-> [👉 跳转查看 cron-job.org 配置教程](#-推荐方案-cron-joborg-配置定时)
+> 已经 Fork 很久的用户需要先点击 **Sync fork → Update branch**，再重新启用 Actions。
 
 ---
 
@@ -126,7 +126,7 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 > **📢 重要提示**
 >
 > - GLaDOS 官网已迁移至 **glados.cloud**（不再是 glados.rocks）
-> - 本项目专为 2026 积分制度优化，每天自动签到两次
+> - 本项目专为 2026 积分制度优化，每天自动签到一次
 > - 完全免费，使用 GitHub Actions，无需自己的服务器
 > - 不会的话可以提 Issue，作者很乐意帮助技术新手！
 
@@ -138,8 +138,8 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | --------------- | ------------------------------- |
 | 🎯 **精准积分** | 获取真实积分数据 + 每日变化量   |
 | 🎁 **兑换提示** | 显示当前可兑换选项及差额        |
-| ⏰ **每日两次** | 早上 9:30 + 晚上 21:30 自动签到 |
-| 🔄 **失败重试** | 首次失败自动重试一次            |
+| ⏰ **每日一次** | 北京时间 9:30 自动签到          |
+| 🔄 **失败重试** | 最多尝试三次，最终失败才报警    |
 | 📱 **微信推送** | PushPlus 漂亮 HTML 报告         |
 | ☁️ **2026 API** | 适配最新 glados.cloud API       |
 | 🔧 **持续维护** | 发现问题及时修复                |
@@ -156,7 +156,7 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | `PUSHPLUS_TOKEN`     | ❌ 否 | PushPlus 微信推送 Token。                                                  |
 | `TELEGRAM_BOT_TOKEN` | ❌ 否 | Telegram 机器人的 Token（例如 `123456:ABC-DEF1234...`）                    |
 | `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
-| `PUSH_LEVEL`         | ❌ 否 | 推送级别：`all` (默认，每次均推送) 或 `fail_only` (仅有账号签到失败时推送) |
+| `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 
 ---
 
@@ -211,7 +211,7 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | 按钮             | 作用                                               |
 | ---------------- | -------------------------------------------------- |
 | **Run workflow** | 立即执行一次（不管现在几点），用于测试配置是否正确 |
-| **定时任务**     | 每天 9:30 和 21:30 自动执行，不需要手动操作        |
+| **定时任务**     | 每天 9:30 自动执行，不需要手动操作                 |
 
 简单说：点 Run workflow 是**测试**，以后会**自动运行**。
 
@@ -234,7 +234,7 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 
 #### 2.1 安装 Cookie 扩展
 
-在 **Edge 浏览器** 的扩展商店搜索 [cookie](file://d:\workplace\2026-glados-checkin\checkin.py#L0-L0)，安装 **Cookie-Editor** 或类似的 Cookie 管理扩展：
+在 **Edge 浏览器** 的扩展商店搜索 `Cookie-Editor`，安装 Cookie 管理扩展：
 
 ![Cookie-Editor 扩展](images/cookie-extension.png)
 
@@ -342,39 +342,32 @@ else:
 
 > [!IMPORTANT]
 >
-> 由于 GitHub Actions 对新仓库的定时任务有限制（[详见说明](#-为什么-github-actions-定时不可靠)），我们推荐使用 **cron-job.org** 这项免费服务来触发签到。
+> 完成首次手动测试后，内置 schedule 会每天运行。请勿再配置相同时间的外部 cron，否则会重复执行。
 
 ---
 
-## ⭐ 推荐方案：cron-job.org 配置定时
+## ⭐ 可选备用：cron-job.org
+
+只有在你的网络环境或 GitHub 计划任务长期不触发时才需要外部 cron。使用它时，请删除或注释 `.github/workflows/checkin.yml` 中的 `schedule`，确保只保留一个调度器。
 
 ### 配置步骤
 
 #### 第一步：获取 GitHub Personal Access Token
 
 1. 访问 [https://github.com/settings/tokens](https://github.com/settings/tokens)
-2. 点击 **Generate new token** → **Generate new token (classic)**
-3. 按下图配置：
+2. 推荐点击 **Generate new token** → **Fine-grained personal access token**
+3. Repository access 只选择你自己的 `2026-glados-checkin` Fork
+4. Repository permissions → **Actions: Read and write**
+5. 生成后立即复制；不要把 Token 发到 Issue、截图或写入仓库
 
-![GitHub Token 设置](images/github_access_tokens.png)
-
-| 选项           | 值                              |
-| -------------- | ------------------------------- |
-| **Name**       | `glados-cron`（任意名称）       |
-| **Expiration** | 选择 90 天或更久                |
-| **勾选权限**   | ✅ **workflow**（在 repo 下方） |
-
-4. 点击底部 **Generate token**
-5. **立即复制生成的 token**（格式类似 `ghp_1234567890abcdef...`，只显示一次！）
-
-> 💡 Token 示例：`ghp_NXLTUqT51BFfilsaZNlaVstacNnkZc4PYCNa`
+> 使用 classic PAT 时，此接口需要 `repo` scope；`workflow` scope 主要用于修改 workflow 文件，并不是调用 dispatch 接口的替代权限。优先使用权限更小的 fine-grained PAT。
 
 #### 第二步：注册 cron-job.org
 
 1. 访问 [https://cron-job.org](https://cron-job.org) 注册账号（免费）
 2. 注册后登录，点击 **Create Cronjob** 创建任务
 
-#### 第三步：创建早签到任务（9:30）
+#### 第三步：创建签到任务（9:30）
 
 ![创建 Cron 任务](images/create_corn_job.png)
 
@@ -404,11 +397,11 @@ else:
 
 | Key             | Value                            |
 | --------------- | -------------------------------- |
-| `Accept`        | `application/vnd.github.v3+json` |
-| `Authorization` | `token 你复制的GitHub_Token`     |
+| `Accept`        | `application/vnd.github+json`     |
+| `Authorization` | `Bearer 你复制的GitHub_Token`     |
 | `Content-Type`  | `application/json`               |
 
-> ⚠️ **注意**：Authorization 的值是 `token ` + **空格** + 你的 Token，例如：`token ghp_NXLTUqT51BFfilsaZNlaVstacNnkZc4PYCNa`
+> Authorization 示例只应写成占位形式：`Bearer github_pat_xxx`。不要公开真实 Token。
 
 **请求体（Request body）**：选择 Raw Body，填入：
 
@@ -420,18 +413,10 @@ else:
 
 配置完成后点击 **Save** 保存。
 
-#### 第四步：创建晚签到任务（21:30）
-
-复制早签到任务，创建第二个任务：
-
-- Title 改为 `GLaDOS 晚签到`
-- 执行时间改为 **21:30**
-- 其他配置完全相同
-
-#### 第五步：测试验证
+#### 第四步：测试验证
 
 1. 在任务列表点击 **Test run** 测试
-2. 成功会显示 **204 No Content** ✅
+2. 当前 GitHub API 成功时会返回 **200**；旧 API 版本可能返回 **204**，两者都代表 dispatch 已接受 ✅
 
 ![测试成功](images/cron_success.png)
 
@@ -443,15 +428,16 @@ else:
 
 | 错误                         | 现象         | 原因                   | 解决方法                                       |
 | ---------------------------- | ------------ | ---------------------- | ---------------------------------------------- |
-| **401 Unauthorized**         | 认证失败     | Authorization 格式错误 | 必须是 `token ghp_xxx`，注意 `token ` 后有空格 |
+| **401 Unauthorized**         | 认证失败     | Authorization 格式错误 | 使用 `Bearer github_pat_xxx`                    |
 | **422 Unprocessable Entity** | 请求无法处理 | Body 缺少 ref 参数     | 改为 `{"ref": "main"}`                         |
+| **404 Not Found**            | 找不到工作流 | Actions 未启用或文件不存在 | 先完成 Fork、启用 Actions 并手动运行一次      |
 | Accept 被截断                | 配置错误     | 输入框显示不全         | 完整值：`application/vnd.github.v3+json`       |
 | Token 有空格                 | 认证失败     | Token 被意外截断       | Token 是连续字符串，中间不能有空格             |
-| 权限不足                     | 403 错误     | Token 无 workflow 权限 | 重新生成 Token，勾选 workflow 权限             |
+| 权限不足                     | 403 错误     | Token 无 Actions 写权限 | fine-grained PAT 设置 Actions: Read and write  |
 
 > 💡 **小贴士**：遇到 401/422 错误时，先检查上面三行 Headers 是否完全正确！
 
-**🎉 完成！** 以后每天 9:30 和 21:30 会自动签到。
+**🎉 完成！** 外部 cron 会每天 9:30 触发一次。记得关闭内置 schedule，避免重复运行。
 
 ---
 
@@ -502,7 +488,7 @@ python3 checkin.py
 
 ### 使用方法 (Flakes)
 
-在你的 [flake.nix](file://d:\workplace\2026-glados-checkin\flake.nix) 中引入本项目：
+在你的 [`flake.nix`](flake.nix) 中引入本项目：
 
 ```nix
 {
@@ -565,58 +551,43 @@ python3 checkin.py
 | 时间（北京时间） | 说明     |
 | ---------------- | -------- |
 | **09:30**        | 早间签到 |
-| **21:30**        | 晚间签到 |
 
-> 💡 **重要**：请使用 [cron-job.org](#-推荐方案-cron-joborg-配置定时) 配置定时任务。GitHub Actions 的 schedule 功能对新仓库不可靠，可能不会自动触发！
+> 默认使用 GitHub Actions；脚本内部最多尝试三次。外部 cron 是备用方案，不应与内置 schedule 同时启用。
 
 ---
 
 ## ❓ 常见问题
 
 <details>
-<summary><b>Q: 为什么推荐 cron-job.org 而不是直接用 GitHub Actions 定时？</b></summary>
+<summary><b>Q: GitHub Actions 会不会在两个月后停止？</b></summary>
 
-**GitHub Actions 的定时任务（schedule trigger）对新仓库有严格限制**：
+GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，计划任务会自动停用。计划任务还可能因高负载延迟，尤其是在整点附近。
 
-| 仓库类型   | 定时任务状态 | 说明                        |
-| ---------- | ------------ | --------------------------- |
-| 新仓库     | ❌ 不触发    | GitHub 会暂停定时任务执行   |
-| 不活跃仓库 | ❌ 不触发    | 长时间没有新活动的仓库      |
-| 活跃仓库   | ✅ 正常触发  | 需要持续活跃 1-2 周后才恢复 |
+本项目的 `.github/workflows/keep-alive.yml` 每月更新一次 `.github/last-active.txt`，早于 60 天期限。若你是旧 Fork：
 
-**现象**：
+1. 点击 **Sync fork → Update branch**。
+2. 打开 Actions，选择两个 workflow，确认状态为 Enabled。
+3. 手动运行一次 `GLaDOS 2026 Checkin` 验证 Cookie。
 
-- 手动点击 "Run workflow" 可以正常运行 ✅
-- 定时任务不会自动执行 ❌
-- Actions 页面没有定时运行记录
-
-**解决方案**：
-
-- **推荐**：使用 cron-job.org（免费、稳定、立即生效）
-- **备选**：连续 1-2 周每天手动触发一次 + keep-alive.yml 维护活跃度
-
-相关 GitHub Discussions：
-
-- [Discussion #185355](https://github.com/orgs/community/discussions/185355) - 新仓库定时任务不运行
-- [Discussion #185212](https://github.com/orgs/community/discussions/185212) - scheduled workflow 从不触发
-
-[🔝 回到开头了解推荐方案](#-推荐方案-cron-joborg-配置定时)
+[GitHub 官方 schedule 说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
 
 </details>
 
 <details>
-<summary><b>Q: cron-job.org 测试返回 401/422 错误怎么办？</b></summary>
+<summary><b>Q: cron-job.org 测试返回 401/404/422 错误怎么办？</b></summary>
 
 请对照以下检查：
 
 **401 Unauthorized（认证失败）**：
 
 ```text
-❌ Authorization: ghp_abc123...
-✅ Authorization: token ghp_abc123...
+❌ Authorization: github_pat_xxx
+✅ Authorization: Bearer github_pat_xxx
 ```
 
-注意：`token ` 前缀后面必须有一个**空格**！
+注意：`Bearer ` 前缀后面必须有一个**空格**。
+
+**404 Not Found**：先完成 Fork，在 GitHub Actions 页面启用工作流并手动运行一次；同时确认 URL 中的用户名和仓库名正确。
 
 **422 Unprocessable Entity（请求无法处理）**：
 
@@ -629,8 +600,8 @@ GitHub API 要求必须指定分支名。
 
 **其他检查**：
 
-- Accept 头是否完整：`application/vnd.github.v3+json`
-- Token 是否有 `workflow` 权限
+- Accept 头是否完整：`application/vnd.github+json`
+- Fine-grained PAT 是否有目标仓库的 `Actions: Read and write` 权限
 - Token 是否过期（检查 Expiration 设置）
 
 [🔝 查看完整陷阱列表](#-常见陷阱与错误)
@@ -656,7 +627,7 @@ GitHub API 要求必须指定分支名。
 <details>
 <summary><b>Q: Cookie 多久过期？</b></summary>
 
-大约 30 天。过期后重新按第二步获取新 Cookie，更新 Secret 即可。
+没有固定保证。退出登录、修改密码、服务端会话策略变化都可能让 Cookie 提前失效。Actions 真正失败并提示登录/认证问题时，重新获取 Cookie 并更新 `GLADOS_COOKIE` 即可。
 
 </details>
 
@@ -678,6 +649,22 @@ cookie1&cookie2&cookie3
 2. 在 PushPlus 网站测试发送功能是否正常
 3. 查看 Actions 运行日志是否有错误
 
+PushPlus 完全可选，不影响签到。若 PushPlus 当前要求实名认证而你不想认证，可以删除 `PUSHPLUS_TOKEN`，或改用可选的 Telegram 推送；实名认证规则由 PushPlus 决定，本项目无法绕过。
+
+</details>
+
+<details>
+<summary><b>Q: 为什么一天运行多次、收到多条通知？</b></summary>
+
+通常是同时启用了 GitHub 内置 schedule 和 cron-job.org。请二选一；本项目默认只需内置 schedule。新版默认 `PUSH_LEVEL=fail_only`，正常完成时不会反复推送。
+
+</details>
+
+<details>
+<summary><b>Q: 积分、兑换天数和流量怎么算？</b></summary>
+
+本项目只读取 GLaDOS API 返回的积分、剩余天数和兑换选项，不制定会员或流量规则。服务条款可能变化，请以 GLaDOS 控制台当时显示的套餐与兑换页面为准；README 不对固定积分、流量或天数作长期承诺。
+
 </details>
 
 <details>
@@ -691,41 +678,11 @@ cookie1&cookie2&cookie3
 
 ---
 
-## ⚠️ 为什么 GitHub Actions 定时不可靠？
+## ⚠️ 运行机制与限制
 
-### 问题背景
+GitHub 的 schedule 不是实时调度器：高负载时可能延迟，极端情况下可能丢弃排队任务；公开仓库连续 60 天无活动会自动停用 schedule。为降低风险，本项目采用非整点运行、脚本内三次重试和每月一次保活提交。
 
-从 2025 年底开始，GitHub 对 **Actions 的定时任务（schedule trigger）** 实施了更严格的限制，影响了大量新仓库和不活跃仓库。
-
-### 具体表现
-
-| 现象            | 说明                             |
-| --------------- | -------------------------------- |
-| ✅ 手动运行正常 | 点击 "Run workflow" 可以成功执行 |
-| ❌ 定时不执行   | 到了设定时间没有任何运行记录     |
-| ⏳ 长时间无反应 | 等待数天仍不会自动触发           |
-
-### 根本原因
-
-这是 GitHub 的**资源管理策略**，用于减少闲置资源消耗：
-
-1. **新仓库限制**：刚创建的仓库，定时任务默认不会自动运行
-2. **活跃度要求**：仓库需要有持续的活动（commit、issue、PR 等）
-3. **恢复周期**：通常需要 1-2 周的活跃期才会恢复定时任务
-
-### 解决方案对比
-
-| 方案                        | 优点                 | 缺点                | 推荐度     |
-| --------------------------- | -------------------- | ------------------- | ---------- |
-| **cron-job.org**            | 免费、稳定、立即生效 | 需要注册第三方服务  | ⭐⭐⭐⭐⭐ |
-| GitHub Actions + keep-alive | 完全在 GitHub 内     | 需等待 1-2 周恢复期 | ⭐⭐       |
-| 每天手动触发                | 简单直接             | 无法自动化          | ⭐         |
-
-### 已采取的措施
-
-本项目已包含 `keep-alive.yml` 文件，每天自动更新时间戳以维持仓库活跃度。但这对**新仓库**仍然需要 1-2 周的积累期。
-
-**因此强烈推荐使用 cron-job.org！** [🔝 查看配置教程](#-推荐方案-cron-joborg-配置定时)
+这仍不能保证第三方服务 100% 可用：GLaDOS 宕机、Cookie 失效、GitHub 故障或用户自行关闭 Actions 时，签到会失败。新版会让真正失败返回非零退出码，以便 Actions 邮件和可选通知准确报警。
 
 ---
 
@@ -733,9 +690,10 @@ cookie1&cookie2&cookie3
 
 | 文件                                                                         | 说明                |
 | ---------------------------------------------------------------------------- | ------------------- |
-| [checkin.py](file://d:\workplace\2026-glados-checkin\checkin.py)             | 核心签到脚本        |
+| [`checkin.py`](checkin.py)                                                     | 核心签到脚本        |
 | `.github/workflows/checkin.yml`                                              | GitHub Actions 配置 |
-| [requirements.txt](file://d:\workplace\2026-glados-checkin\requirements.txt) | Python 依赖         |
+| [`requirements.txt`](requirements.txt)                                        | Python 依赖         |
+| `tests/`                                                                       | 结果判断与重试测试  |
 | `images/`                                                                    | 教程截图            |
 
 ---
@@ -750,13 +708,21 @@ cookie1&cookie2&cookie3
 
 ## 📝 更新日志
 
+### v1.2.0 (2026-08-05)
+
+- 识别 `Today's observation logged...` 等 2026 正常返回，不再显示“成功 0/1”
+- 失败自动重试三次，最终失败返回非零退出码
+- 默认仅失败推送，避免多个调度器造成通知轰炸
+- 每天一次签到、每月一次保活，替代每天保活提交
+- 修正 workflow dispatch 的 PAT 权限、HTTP 状态码和 404 排障说明
+
 ### v1.1.0 (2026-01-25) 🔥 重大修复
 
 **问题**：签到始终返回 "please checkin via https://glados.cloud"，导致机器人无法签到。
 
 **原因**：GLaDOS 官方更新了 API，签到 token 必须从 `glados.one` 改为 `glados.cloud`。
 
-**修复**：更新 [checkin.py](file://d:\workplace\2026-glados-checkin\checkin.py) 中的 token 参数。
+**修复**：更新 [`checkin.py`](checkin.py) 中的 token 参数。
 
 **排查过程**：
 
@@ -786,7 +752,7 @@ MIT
 
 **Made with ❤️ for GLaDOS users in 2026**
 
-**🔧 本项目经过 2026-04-20 验证，确认可用！**
+**🔧 本项目最近一次维护验证：2026-08-05**
 
 **⭐ Star 一下，支持作者持续更新！⭐**
 

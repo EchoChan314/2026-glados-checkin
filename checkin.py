@@ -11,12 +11,14 @@
 - 支持 Cookie-Editor 导出格式
 """
 
-import requests
+import html
 import json
 import os
 import sys
 import time
 from datetime import datetime
+
+import requests
 
 # Fix Windows Unicode Output
 if sys.platform.startswith('win'):
@@ -37,6 +39,12 @@ HEADERS = {
     'Accept': 'application/json, text/plain, */*',
 }
 
+NORMAL_CHECKIN_MESSAGES = (
+    "checkin! got",
+    "checkin repeats! please try tomorrow",
+    "today's observation logged",
+)
+
 # ================= 工具函数 =================
 
 def log(msg):
@@ -45,7 +53,8 @@ def log(msg):
 
 def extract_cookie(raw: str):
     """提取 Cookie，支持 Cookie-Editor 冒号格式"""
-    if not raw: return None
+    if not raw:
+        return None
     raw = raw.strip()
     
     # Cookie-Editor 格式 (koa:sess=xxx; koa:sess.sig=yyy)
@@ -55,8 +64,10 @@ def extract_cookie(raw: str):
     # JSON
     if raw.startswith('{'):
         try:
-            return 'koa.sess=' + json.loads(raw).get('token')
-        except: pass
+            token = json.loads(raw).get('token')
+            return f'koa:sess={token}' if token else None
+        except (json.JSONDecodeError, AttributeError):
+            return None
         
     # JWT Token
     if raw.count('.') == 2 and '=' not in raw and len(raw) > 50:
@@ -73,7 +84,38 @@ def get_cookies():
     
     # Split by enter or &
     sep = '\n' if '\n' in raw else '&'
-    return [extract_cookie(c) for c in raw.split(sep) if c.strip()]
+    return [cookie for item in raw.split(sep) if (cookie := extract_cookie(item))]
+
+
+def is_normal_checkin_result(result):
+    """Return True for a new check-in or a harmless already-checked-in response."""
+    if not isinstance(result, dict):
+        return False
+
+    message = str(result.get('message', '')).strip().lower()
+    if any(marker in message for marker in NORMAL_CHECKIN_MESSAGES):
+        return True
+
+    # GLaDOS has historically used code=0 for successful check-ins. Newer
+    # duplicate/observation responses can use code=1 and are handled above.
+    return result.get('code') == 0
+
+
+def checkin_with_retry(client, attempts=3, delay_seconds=60):
+    """Retry transient/unknown check-in failures without sending duplicate alerts."""
+    attempts = max(1, attempts)
+    last_result = None
+
+    for attempt in range(1, attempts + 1):
+        last_result = client.checkin()
+        if is_normal_checkin_result(last_result):
+            return last_result, True
+
+        if attempt < attempts:
+            log(f"⚠️ 签到第 {attempt}/{attempts} 次失败，{delay_seconds} 秒后重试")
+            time.sleep(max(0, delay_seconds))
+
+    return last_result, False
 
 # ================= 核心逻辑 =================
 
@@ -106,7 +148,8 @@ class GLaDOS:
                 if resp.status_code == 200:
                     self.domain = d # Remember working domain
                     return resp.json()
-            except Exception as e:
+                log(f"⚠️ {d} 返回 HTTP {resp.status_code}")
+            except (requests.RequestException, ValueError) as e:
                 log(f"⚠️ {d} 请求失败: {e}")
                 continue
         return None
@@ -139,11 +182,11 @@ class GLaDOS:
             
             # 兑换计划
             plans = res.get('plans', {})
-            pts = int(self.points)
+            pts = int(float(self.points))
             exchange_lines = []
-            for plan_id, plan_data in plans.items():
-                need = plan_data['points']
-                days = plan_data['days']
+            for plan_data in plans.values():
+                need = int(plan_data.get('points', 0))
+                days = plan_data.get('days', '?')
                 if pts >= need:
                     exchange_lines.append(f"✅ {need}分→{days}天 (可兑换)")
                 else:
@@ -159,13 +202,24 @@ class GLaDOS:
 # ================= 主程序 =================
 
 def pushplus(token, title, content):
-    if not token: return
+    if not token:
+        return False
     try:
-        url = "http://www.pushplus.plus/send"
-        requests.get(url, params={'token': token, 'title': title, 'content': content, 'template': 'html'}, timeout=5)
+        url = "https://www.pushplus.plus/send"
+        response = requests.post(
+            url,
+            json={'token': token, 'title': title, 'content': content, 'template': 'html'},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get('code') not in (None, 0, 200):
+            raise RuntimeError(payload.get('msg', f"PushPlus code={payload.get('code')}"))
         log("✅ PushPlus 推送成功")
-    except:
-        log("❌ PushPlus 推送失败")
+        return True
+    except (requests.RequestException, ValueError, RuntimeError) as e:
+        log(f"❌ PushPlus 推送失败: {e}")
+        return False
 
 def telegram_push(token, chat_id, title, content):
     if not token or not chat_id: return
@@ -204,19 +258,21 @@ def telegram_push(token, chat_id, title, content):
             "text": text,
             "parse_mode": "HTML"
         }
-        log(f"发送内容: {data}")
-        resp=requests.post(url, json=data, timeout=5)
+        resp = requests.post(url, json=data, timeout=10)
         if resp.status_code != 200:
-            log(f"❌ Telegram 推送失败: {resp.json()}")
-            return
+            log(f"❌ Telegram 推送失败: HTTP {resp.status_code}")
+            return False
         log("✅ Telegram 推送成功")
-    except Exception as e:
+        return True
+    except (requests.RequestException, ValueError) as e:
         log(f"❌ Telegram 推送失败: {e}")
+        return False
 
 def main():
     log("🚀 2026 GLaDOS Checkin Starting...")
     cookies = get_cookies()
-    if not cookies: sys.exit(1)
+    if not cookies:
+        return 1
     
     results = []
     success_cnt = 0
@@ -225,7 +281,9 @@ def main():
         g = GLaDOS(cookie)
         
         # 1. Checkin
-        res = g.checkin()
+        attempts = int(os.environ.get("CHECKIN_MAX_ATTEMPTS", "3"))
+        delay_seconds = int(os.environ.get("CHECKIN_RETRY_DELAY_SECONDS", "60"))
+        res, is_success = checkin_with_retry(g, attempts, delay_seconds)
         msg = res.get('message', 'Failure') if res else "Network Error"
         
         # 2. Get Info (Refresh data)
@@ -233,18 +291,19 @@ def main():
         g.get_points()
         
         # 3. Log
-        status_icon = "✅" if "Checkin" in msg else "⚠️"
-        log(f"用户: {g.email} | 积分: {g.points} | 天数: {g.left_days} | 结果: {msg}")
+        status_icon = "✅" if is_success else "❌"
+        log(f"{status_icon} 用户: {g.email} | 积分: {g.points} | 天数: {g.left_days} | 结果: {msg}")
         
-        if "Checkin" in msg: success_cnt += 1
+        if is_success:
+            success_cnt += 1
         
         # 4. Result Formatting
         results.append(f"""
 <div style="border:2px solid #333; padding:15px; margin-bottom:15px; border-radius:10px; background:#fff;">
-    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {g.email}</h3>
+    <h3 style="margin:0 0 15px 0; color:#333; border-bottom:2px solid #333; padding-bottom:8px;">👤 {html.escape(str(g.email))}</h3>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>当前积分:</b> <span style="color:#e74c3c; font-size:22px; font-weight:bold;">{g.points}</span> <span style="color:#27ae60; font-weight:bold;">({g.points_change})</span></p>
     <p style="margin:8px 0; color:#000; font-size:16px;"><b>剩余天数:</b> <span style="font-weight:bold;">{g.left_days} 天</span></p>
-    <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {msg}</p>
+    <p style="margin:8px 0; color:#000; font-size:16px;"><b>签到结果:</b> {html.escape(str(msg))}</p>
     <div style="margin-top:15px; padding:12px; background:#f0f0f0; border-radius:8px; border:1px solid #ccc;">
         <p style="margin:0 0 8px 0; color:#333; font-weight:bold; font-size:15px;">🎁 兑换选项:</p>
         <p style="margin:0; color:#000; font-size:14px; line-height:1.8;">
@@ -254,11 +313,11 @@ def main():
 """)
 
     # Push
-    push_level = os.environ.get("PUSH_LEVEL", "all").lower()
+    push_level = os.environ.get("PUSH_LEVEL", "fail_only").lower()
     
     if push_level == "fail_only" and success_cnt == len(cookies):
         log("⏭️ 根据 PUSH_LEVEL=fail_only 设置，所有账号签到成功，跳过推送")
-        return
+        return 0
 
     ptoken = os.environ.get("PUSHPLUS_TOKEN")
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -274,5 +333,7 @@ def main():
         if tg_token and tg_chat_id:
             telegram_push(tg_token, tg_chat_id, title, content)
 
+    return 0 if success_cnt == len(cookies) else 1
+
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
