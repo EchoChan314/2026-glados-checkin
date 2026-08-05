@@ -5,6 +5,14 @@ on:
     # 北京时间 09:30（UTC 01:30）。一天一次即可，脚本会在失败时自动重试。
     - cron: '30 1 * * *'
   workflow_dispatch:
+    inputs:
+      dispatch_source:
+        description: 手动运行请选择 manual；外部定时器填写 external
+        required: true
+        type: choice
+        options:
+          - manual
+          - external
 
 concurrency:
   group: glados-checkin
@@ -15,6 +23,7 @@ permissions:
 
 jobs:
   checkin:
+    if: github.event_name == 'schedule' || inputs.dispatch_source == 'manual' || inputs.dispatch_source == 'external'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

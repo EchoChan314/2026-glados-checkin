@@ -210,7 +210,7 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 
 | 按钮             | 作用                                               |
 | ---------------- | -------------------------------------------------- |
-| **Run workflow** | 立即执行一次（不管现在几点），用于测试配置是否正确 |
+| **Run workflow** | 选择 `dispatch_source: manual` 后立即执行一次，用于测试配置是否正确 |
 | **定时任务**     | 每天 9:30 自动执行，不需要手动操作                 |
 
 简单说：点 Run workflow 是**测试**，以后会**自动运行**。
@@ -336,13 +336,15 @@ else:
 1. 进入你 Fork 仓库的 **Actions** 标签页
 2. 如果看到黄色提示，点击 **I understand my workflows, go ahead and enable them**
 3. 点击左侧的 **GLaDOS 2026 Checkin**
-4. 点击右侧 **Run workflow** 按钮手动测试一次
+4. 点击右侧 **Run workflow**，选择 `dispatch_source: manual` 后手动测试一次
 
 ![启用 Actions](images/workflow.png)
 
 > [!IMPORTANT]
 >
 > 完成首次手动测试后，内置 schedule 会每天运行。请勿再配置相同时间的外部 cron，否则会重复执行。
+>
+> 新版要求 API 调用显式传入 `dispatch_source`；旧版仅发送 `{"ref":"main"}` 的外部任务不会再执行签到，可直接在 cron-job.org 删除。
 
 ---
 
@@ -406,7 +408,7 @@ else:
 **请求体（Request body）**：选择 Raw Body，填入：
 
 ```json
-{ "ref": "main" }
+{ "ref": "main", "inputs": { "dispatch_source": "external" } }
 ```
 
 ![常用配置预览](images/cron_common.png)
@@ -429,7 +431,7 @@ else:
 | 错误                         | 现象         | 原因                   | 解决方法                                       |
 | ---------------------------- | ------------ | ---------------------- | ---------------------------------------------- |
 | **401 Unauthorized**         | 认证失败     | Authorization 格式错误 | 使用 `Bearer github_pat_xxx`                    |
-| **422 Unprocessable Entity** | 请求无法处理 | Body 缺少 ref 参数     | 改为 `{"ref": "main"}`                         |
+| **422 Unprocessable Entity** | 请求无法处理 | Body 缺少 ref 或必填 input | 按上面的完整 Request body 填写                 |
 | **404 Not Found**            | 找不到工作流 | Actions 未启用或文件不存在 | 先完成 Fork、启用 Actions 并手动运行一次      |
 | Accept 被截断                | 配置错误     | 输入框显示不全         | 完整值：`application/vnd.github.v3+json`       |
 | Token 有空格                 | 认证失败     | Token 被意外截断       | Token 是连续字符串，中间不能有空格             |
@@ -592,11 +594,11 @@ GitHub 官方规则是：公开仓库连续 **60 天没有仓库活动**时，�
 **422 Unprocessable Entity（请求无法处理）**：
 
 ```text
-❌ Body: {}
-✅ Body: {"ref": "main"}
+❌ Body: {"ref": "main"}
+✅ Body: {"ref": "main", "inputs": {"dispatch_source": "external"}}
 ```
 
-GitHub API 要求必须指定分支名。
+本工作流要求同时指定分支名和 `dispatch_source`，用来阻止旧外部定时器继续重复签到。
 
 **其他检查**：
 
