@@ -193,6 +193,7 @@ def is_non_retryable_checkin_result(result):
     message = str(result.get('message', '')).strip().lower()
     return (
         code == -2
+        or result.get('http_status') in (401, 403)
         or reason == 'device-mismatch'
         or '没有权限' in message
         or 'permission' in message
@@ -201,9 +202,44 @@ def is_non_retryable_checkin_result(result):
     )
 
 
+def summarize_checkin_failure(result):
+    """Describe failures using fixed labels and allowlisted, non-secret metadata."""
+    if not isinstance(result, dict):
+        return '未收到有效 API 响应'
+
+    reason = str(result.get('reason', '')).strip().lower()
+    message = str(result.get('message', '')).strip().lower()
+    if reason == 'device-mismatch':
+        label = '服务端拒绝设备校验；请核对会话和 User-Agent 配置'
+    elif 'automated check-in detected' in message:
+        label = '服务端拒绝自动签到；请核对会话配置，仍失败时联系服务方'
+    elif is_non_retryable_checkin_result(result):
+        label = '服务端拒绝会话认证或访问'
+    else:
+        label = '签到失败'
+
+    details = []
+    code = result.get('code')
+    if type(code) is int and -999 <= code <= 999:
+        details.append(f'code={code}')
+    status = result.get('http_status')
+    if type(status) is int and 100 <= status <= 599:
+        details.append(f'http_status={status}')
+    if reason in ('device-mismatch', 'http-auth-rejected'):
+        details.append(f'reason={reason}')
+    return label + (f" [{', '.join(details)}]" if details else '')
+
+
+def log_user_agent_configuration():
+    configured = bool(os.environ.get('GLADOS_USER_AGENT', '').strip())
+    log('浏览器 User-Agent: ' + ('已配置' if configured else '未配置，使用默认值'))
+
+
 def is_normal_checkin_result(result):
     """Return True for a new check-in or a harmless already-checked-in response."""
     if not isinstance(result, dict):
+        return False
+    if is_non_retryable_checkin_result(result):
         return False
 
     message = str(result.get('message', '')).strip().lower()
@@ -226,10 +262,7 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
             return last_result, True
 
         if is_non_retryable_checkin_result(last_result):
-            message = last_result.get('message', '认证失败')
-            if last_result.get('reason') == 'device-mismatch':
-                message = '登录设备不匹配，请重新登录并更新完整 Cookie'
-            log(f"❌ 签到认证失败，不再重试: {message}")
+            log(f"❌ 签到认证失败，不再重试: {summarize_checkin_failure(last_result)}")
             return last_result, False
 
         if attempt < attempts:
@@ -282,6 +315,13 @@ class GLaDOS:
                 if resp.status_code == 200:
                     self.domain = d # Remember working domain
                     return resp.json()
+                if resp.status_code in (401, 403):
+                    # A rejected request must not be replayed on alternate domains.
+                    # The response can be HTML or contain private details; do not echo it.
+                    return {
+                        'http_status': resp.status_code,
+                        'reason': 'http-auth-rejected',
+                    }
                 log(f"⚠️ {d} 返回 HTTP {resp.status_code}")
             except (requests.RequestException, ValueError) as e:
                 # InvalidHeader and other request errors may embed Cookie values.
@@ -449,9 +489,8 @@ def telegram_push(token, chat_id, title, content):
 def diagnose_accounts(cookies):
     """Read authentication status without check-in, redemption or notifications."""
     success_cnt = 0
-    has_user_agent = bool(os.environ.get('GLADOS_USER_AGENT', '').strip())
     log('🔎 只读诊断：仅查询登录状态，不签到、不兑换、不推送')
-    log('浏览器 User-Agent: ' + ('已配置' if has_user_agent else '未配置，使用默认值'))
+    log_user_agent_configuration()
     for i, cookie in enumerate(cookies, 1):
         client = GLaDOS(cookie)
         result = client.req('GET', '/api/user/status')
@@ -466,7 +505,7 @@ def diagnose_accounts(cookies):
             success_cnt += 1
             log(f'✅ 账号 {i}: 登录状态查询成功')
         elif is_non_retryable_checkin_result(result):
-            log(f'❌ 账号 {i}: 会话认证被拒绝，请重新登录并更新完整 Cookie')
+            log(f'❌ 账号 {i}: 会话认证被拒绝；{summarize_checkin_failure(result)}')
         else:
             log(f'❌ 账号 {i}: 登录状态查询失败，请检查网络并重新登录更新 Cookie')
     log('只读查询通过不代表签到设备校验通过；实际签到仍需匹配浏览器 User-Agent')
@@ -482,6 +521,7 @@ def main():
     if os.environ.get('CHECKIN_DIAGNOSTIC_ONLY', '').strip().lower() in ('1', 'true', 'yes'):
         return diagnose_accounts(cookies)
 
+    log_user_agent_configuration()
     exchange_plan = get_exchange_plan()
     if exchange_plan:
         plan = EXCHANGE_PLANS[exchange_plan]
@@ -500,18 +540,22 @@ def main():
         attempts = int(os.environ.get("CHECKIN_MAX_ATTEMPTS", "3"))
         delay_seconds = int(os.environ.get("CHECKIN_RETRY_DELAY_SECONDS", "60"))
         res, is_success = checkin_with_retry(g, attempts, delay_seconds)
-        msg = res.get('message', 'Failure') if res else "Network Error"
+        msg = res.get('message', 'Success') if is_success else summarize_checkin_failure(res)
 
-        # 2. Get Info (Refresh data)
-        g.get_status()
-        g.get_points()
+        if is_non_retryable_checkin_result(res):
+            # Stop all follow-up requests for this account after an explicit denial.
+            g.exchange_result = '⏭️ 认证被拒绝，跳过兑换'
+        else:
+            # 2. Get Info (Refresh data)
+            g.get_status()
+            g.get_points()
 
-        # 2.5 Auto exchange (issue #11): runs after check-in so the
-        # just-earned points count toward the threshold.
-        if exchange_plan:
-            g.exchange_result = auto_exchange(g, exchange_plan)
-            if not g.exchange_result.startswith("⏭️"):
-                exchange_events += 1
+            # 2.5 Auto exchange (issue #11): runs after check-in so the
+            # just-earned points count toward the threshold.
+            if exchange_plan:
+                g.exchange_result = auto_exchange(g, exchange_plan)
+                if not g.exchange_result.startswith("⏭️"):
+                    exchange_events += 1
 
         # 3. Log
         status_icon = "✅" if is_success else "❌"
