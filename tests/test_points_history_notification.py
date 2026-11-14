@@ -56,6 +56,7 @@ class PointsHistoryTests(unittest.TestCase):
             with mock.patch('checkin.beijing_now', return_value=FIXED_NOW), \
                     mock.patch.dict(os.environ, {'GLADOS_COOKIE': COOKIE,
                     'EXCHANGE_PLAN': 'off', 'CHECKIN_MAX_ATTEMPTS': '1',
+                    'GLADOS_BROWSER_CHECKIN': '0',
                     'PUSHPLUS_TOKEN': 'fake-token', 'PUSH_LEVEL': 'always'}, clear=True), \
                     mock.patch('checkin.GLaDOS', return_value=client), \
                     mock.patch('checkin.pushplus') as push, \
@@ -88,6 +89,7 @@ class PointsHistoryTests(unittest.TestCase):
                     'GLADOS_COOKIE': COOKIE,
                     'EXCHANGE_PLAN': 'plan500',
                     'CHECKIN_MAX_ATTEMPTS': '3',
+                    'GLADOS_BROWSER_CHECKIN': '0',
                     'PUSHPLUS_TOKEN': 'fake-token',
                     'PUSH_LEVEL': 'fail_only',
                 }, clear=True), \

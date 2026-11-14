@@ -1,3 +1,4 @@
+import os
 import unittest
 from datetime import datetime, timezone, timedelta
 from unittest import mock
@@ -47,7 +48,8 @@ class AttributionTests(unittest.TestCase):
             {'request_failed': True, 'reason': 'network'},
             {'code': 5, 'reason': 'turnstile', 'message': 'Nothing was recorded'},
         ])
-        with mock.patch('checkin.log'):
+        with mock.patch.dict(os.environ, {'GLADOS_BROWSER_CHECKIN': '0'}), \
+                mock.patch('checkin.log'):
             result, success = checkin.checkin_with_retry(client, 3, 0)
         self.assertFalse(success)
         self.assertEqual(client.checkin.call_count, 2)

@@ -463,6 +463,47 @@ def summarize_current_run_gain(result, is_success, client):
     return claim + '；已读取流水中未识别到今日正变动（不等于没有入账，记录可能缺失或延迟）'
 
 
+def attempt_browser_checkin(client, max_attempts=2):
+    """Turnstile 兜底：真浏览器打开官方签到页完成验证并签到。
+
+    返回浏览器签到结果 dict；返回 None 表示兜底被禁用或环境不可用。
+    任何异常都不应中断主流程，最终失败按 turnstile 原语义处理。
+    """
+    if os.environ.get('GLADOS_BROWSER_CHECKIN', '1').strip().lower() in ('0', 'false', 'no', 'off'):
+        return None
+    # GitHub Actions 是数据中心 IP + 无头临时容器，Turnstile 基本不可能放行，
+    # 默认禁用以免浪费 runner 分钟数；确要尝试可显式设 GLADOS_BROWSER_CHECKIN=1。
+    if (os.environ.get('GITHUB_ACTIONS', '').strip().lower() in ('1', 'true', 'yes')
+            and os.environ.get('GLADOS_BROWSER_CHECKIN', '').strip().lower() not in ('1', 'true', 'yes', 'on')):
+        log("⏭️ 检测到 GitHub Actions 环境：浏览器兜底默认禁用（数据中心 IP 无法可靠通过 Turnstile，请转本地运行）")
+        return None
+    try:
+        from browser_checkin import browser_checkin
+    except ImportError:
+        log("⚠️ playwright 未安装（pip install playwright && playwright install chromium），无法使用浏览器兜底")
+        return None
+    try:
+        ua = get_browser_headers().get('User-Agent')
+    except UserAgentConfigurationError:
+        ua = None
+    if not ua:
+        log("⚠️ 缺少浏览器 User-Agent，跳过浏览器兜底")
+        return None
+    result = None
+    for i in range(1, max(1, max_attempts) + 1):
+        log(f"🔄 浏览器签到兜底第 {i}/{max_attempts} 次（真页面自行完成 Turnstile）…")
+        try:
+            result = browser_checkin(client.cookie, ua)
+        except Exception as e:  # noqa: BLE001 - 兜底通道绝不冒泡异常
+            result = {'request_failed': True, 'reason': 'browser-checkin-error',
+                      'detail': type(e).__name__}
+        if is_normal_checkin_result(result) or is_non_retryable_checkin_result(result):
+            return result
+        if i < max_attempts:
+            time.sleep(8)
+    return result
+
+
 def checkin_with_retry(client, attempts=3, delay_seconds=60):
     """Retry transient/unknown check-in failures without sending duplicate alerts."""
     attempts = max(1, attempts)
@@ -478,8 +519,19 @@ def checkin_with_retry(client, attempts=3, delay_seconds=60):
             return last_result, False
 
         if is_turnstile_checkin_result(last_result):
-            log(f"❌ 签到需要人机验证，停止自动重试: {summarize_checkin_failure(last_result)}")
-            return last_result, False
+            # 2026-11 起官方签到接口要求 Cloudflare Turnstile 令牌，纯 API 无法取得；
+            # 改用真浏览器打开官方签到页，由页面自身完成验证（见 browser_checkin.py）。
+            browser_result = attempt_browser_checkin(client)
+            if browser_result is None:
+                log(f"❌ 签到需要人机验证，停止自动重试: {summarize_checkin_failure(last_result)}")
+                return last_result, False
+            if is_normal_checkin_result(browser_result):
+                return browser_result, True
+            if is_non_retryable_checkin_result(browser_result):
+                log(f"❌ 浏览器签到被拒绝，不再重试: {summarize_checkin_failure(browser_result)}")
+                return browser_result, False
+            log(f"❌ 浏览器兜底未通过人机验证: {summarize_checkin_failure(browser_result)}")
+            return browser_result, False
 
         if attempt < attempts:
             log(f"⚠️ 签到第 {attempt}/{attempts} 次失败，{delay_seconds} 秒后重试")

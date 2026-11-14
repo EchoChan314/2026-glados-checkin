@@ -1,71 +1,28 @@
 # 🎁 5 分钟配置 GLaDOS 自动签到
 
 > [!WARNING]
-> **状态公告（2026-11-14，北京时间）：当前存在 Turnstile 验证拒绝，尚未验证通用自动签到修复。**
->
-> 维护者此前确有首次签到获得 14 分的记录，但 11 月 14 日的自动运行失败；同日一次实际测试确认 `code=5, reason=turnstile`，积分未增长。**单元测试通过、状态查询正常或返回“今日已签到”，均不能单独证明自动首次签到成功。**
->
-> 下方旧版恢复记录仅描述当时结果，不代表当前持续可用。请先阅读以下公告，勿为排查反复签到或购买套餐。
+> **2026-11-14：签到接口接入 Cloudflare Turnstile，纯 API 请求被拒。当晚已上线修复——本地"真浏览器兜底"实测通过；GitHub Actions 机房环境仍无通用方案（浏览器模式自动禁用）。详见下方公告。**
 
 <a id="status-2026-11-14"></a>
-## 📢 2026-11-14 签到状态与社区反馈公告
+## 📢 2026-11-14 公告：Turnstile 拒绝与修复
 
-本公告区分维护者实测与社区自述，不将个人结果当作所有账号的规则。当前应分别核对：**签到请求是否成功、实际入账多少积分、是否遇到验证拒绝**。
+**发生了什么**：11 月 14 日起签到接口返回 `code=5, reason=turnstile`（Cloudflare verification failed），纯 API 请求一律被拒；GitHub Actions 机房环境的无头浏览器尝试同样未通过（多个社区项目同日反馈一致）。
 
-### 维护者已核实的情况
+**修复（当晚上线，已实测）**：新增 [`browser_checkin.py`](browser_checkin.py) 本地真浏览器兜底——当签到接口明确返回 `reason=turnstile` 时，自动用本机真实 Chrome（Edge → Chromium 依次回退）打开官方签到页，由**页面自身**完成 Turnstile 验证并点击签到，脚本只注入你配置的 Cookie 并读取结果。维护者本机实测约 15 秒完成验证并入账。
 
-- **历史成功：**[11 月 13 日的首次签到运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43253941633)实际返回 `Checkin! Got 14 Points`，余额为 15。
-- **当前失败：**[11 月 14 日 09:31 的自动运行](https://github.com/lankerr/2026-glados-checkin/actions/runs/43541131946)中，92 项单元测试通过，但实际签到重试后返回 `code=5`，没有成功奖励记录。
-- **单次诊断：**同日约 13:27，维护者在状态、积分查询正常后仅提交一次签到，脱敏结果为 `code=5, reason=turnstile`，消息包含 `Cloudflare verification failed`；前后余额均为 15，最新变动仍是前一日 +14。此项是维护者实测记录，未公开原始响应或凭据；已在[相关讨论](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60#issuecomment-6872400475)说明。
-- **适配范围与最新诊断改进：**此前已经完成 nonce/proof challenge 流程适配（见 [PR #33](https://github.com/lankerr/2026-glados-checkin/pull/33)），但它不等于现在的 Cloudflare Turnstile 已通过或已解决。最新 `checkin.py` 已完成三项修正：① 识别 `reason=turnstile`（及 `Cloudflare verification failed`）时明确输出原因并**立即停止无意义重试**、跳过自动兑换；② 分别展示**签到接口声称的奖励、今日已读流水观察和最近历史流水**；同日同额不构成本次入账归属证明；③ 保留真实非零小数（如 `+1.5`），不再简单截断小数部分。
-- 本公告是状态说明，**没有发布绕过 Turnstile 人机验证的方法**；遇到人机验证拦截时请通过官网浏览器手动签到。
+- **适用范围**：仅限自己的电脑 + 真实浏览器。检测到 `GITHUB_ACTIONS` 时自动禁用（数据中心 IP 无法可靠通过，请勿在 Actions 上反复重试）。
+- **不是"绕过"**：人机验证仍由 Cloudflare 官方组件在真实浏览器中完成并放行；本仓库不提供打码或绕过方案。
+- **本地使用**：本机需有 Chrome 或 Edge（或执行 `python -m playwright install chromium`）→ `pip install -r requirements.txt` → 配置 `GLADOS_COOKIE` → 运行 `checkin.py`（或挂计划任务）。运行时会短暂弹出浏览器窗口，属正常流程，勿手动关闭。
+- **Actions 用户**：继续用只读模式核对（`diagnose_only` / `notify_status_only`），或转本地运行。付费/购买套餐不解决 Turnstile，请勿为排查而购买（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37) 反馈）。
 
-### 📊 关键核查：返回的“加多少分”等于真正的实际入账吗？
+**积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
 
-针对大家关心的“接口/通知显示的加分是否等于真正到账积分”，核查结论如下：
-
-1. **首次签到真正成功且未触发上限时，两者一致：**
-   维护者账号实测记录中，11 月 12 日返回 `Got 11 Points`（`490 → 501`，随后自动兑换 `-500` 剩 `1` 分）、11 月 13 日返回 `Got 14 Points`（`/api/user/points` 流水新增 `+14.0`，余额 `1 → 15`），接口返回的 `Got X Points` 与积分流水实际入账完全一致。
-2. **通知与归属边界（2026-11-14 补充修正）：**
-   - **历史流水不是本次奖励：**旧版通知把 `history[0]` 的加分挂在当前余额后，容易让失败运行显示前一天的 `+14`。现已独立显示历史变动及北京时间。
-   - **同日同额不等于同一次请求：**`7980b3b` 的“今日流水交叉核对”没有交易标识关联，可能把同日手动签到、其他奖励或多笔流水中的一笔误认作本次入账。现改为分别显示接口声称和流水观察，标明**归属未确认**，不宣称“核对一致”。没有找到今日流水也不等于零入账，记录可能缺失或延迟。
-   - **失败／重复响应不证明整轮新增为零：**一次明确拒绝仅描述该次响应；若此前请求超时，最终失败或 `Today's observation logged` 无法排除前次已入账。通知保留“本轮是否入账未知”，需核对完整流水。本账号此前单次测试前后余额未变，是特定实测结论，不推广到所有重试运行。
-   - **分项与总额分别记录：**社区报告过 `Base +2.7`、最终 `+2`，另有 `Free cap max 2` 页面截图，但单凭分项合计差异不能推断某次请求的封顶原因。未知归属的今日正变动也不应被叫作“本次真实到账”。
-   - **兑换前后分开：**报告在自动兑换之前保留接口声称及流水观察，兑换后的 `-500` 仍作为历史变动显示，不将观察升级成已验证归属。
-
-
-### 社区反馈：有来源，但不等于独立复测
-
-| 反馈 | 原始来源 | 能说明与不能说明的内容 |
-| --- | --- | --- |
-| 自动脚本两个账号失败；网页手动通过验证后，其中一个无购买记录的账号入账 2 分 | [Issue #37：charmok](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6873121827) | 用户自述的手动/自动对照；环境不同，不能确定单一原因或证明自动修复。 |
-| 自述实际 12 分、前一日有购买记录；明确先手动签到，再运行脚本 | [Issue #28：补充说明](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6874124849) | 后续脚本返回 `Today's observation logged`，不能证明脚本完成当日首次签到或自动获得 12 分。 |
-| 自述提交官方 ticket 后问题修复并获 20 分，当时准备次日观察自动签到 | [Issue #37：工单反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6850764702) | 截至本公告核对时未看到该用户确认次日自动恢复；不知道客服具体操作，不能保证补分或恢复。 |
-| 手动签到页面显示 `Free cap max 2` | [Issue #28：截图反馈](https://github.com/lankerr/2026-glados-checkin/issues/28#issuecomment-6842245219) | 支持存在此账号页面提示，不代表所有账户完整奖励规则；购买历史与套餐标签不能等同。 |
-| 其他项目也报告 Cloudflare 拒绝，其中有 `code=5, reason=turnstile`，且 GitHub Actions 机房环境的无头浏览器尝试在同日公开运行中同样未通过 | [checkin #75](https://github.com/integration-intelligent/checkin/issues/75)、[Glados-Railgun #60](https://github.com/Devilstore/Glados-Railgun-checkin/issues/60)、[MoviePilot #82](https://github.com/madrays/MoviePilot-Plugins/issues/82) | 是跨项目公开反馈与公开运行记录；说明 challenge 已关联 Turnstile 校验，公共机房环境自动过验尚无已验证的通用方案。 |
-
-**关于购买：**已有自称付费账号仍低分或遇到验证的[反馈](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6847563354)。即使付款解除某项积分上限，也不等于保证固定积分或解决 Turnstile。不要仅为排查而购买，也不要把“手动成功后脚本显示已签到”当作自动恢复证据。
-
-### 目前如何核对与反馈
-
-- 以官网签到记录和积分流水核对实际入账，不只看 Actions 绿灯、HTTP 200 或状态查询成功。
-- 如需在不触发 Turnstile 的前提下验证配置或通知：可在 GitHub Actions **Run workflow** 中勾选 `diagnose_only`（只读验证会话，不推送）或 `notify_status_only`（只读读取状态与积分流水并发送 PushPlus/Server酱/Telegram 核对卡片，不发起签到请求、不自动兑换）。
-- 遇到验证拒绝时，可按官网正常人工流程处理或联系官方支持；不要为了收集数据重复签到、购买套餐或频繁切换网络。
-- 欢迎在 [Issue #37 的脱敏数据征集](https://github.com/lankerr/2026-glados-checkin/issues/37#issuecomment-6872387904)自愿补充已有的时间/时区、脚本版本、手动或自动、脱敏错误及积分变化。购买状态、工单结果可以不填。
-- **不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号/订单信息的截图。**
+**隐私**：任何反馈都不要公开 Cookie、Token、密码、验证码、nonce/proof、完整请求头、HAR 或含邮箱/账号信息的截图。
 
 ---
 
 > [!IMPORTANT]
-> **历史恢复记录（2026-09-30，非当前可用性保证）。** 新版认证修复已发布，维护者仓库已验证签到与 PushPlus 通知正常，[查看恢复公告和实测记录](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。
->
-> Fork 用户请先 **Sync fork → Update branch**。**已能正常签到的用户无需更换 Cookie。**
->
-> 同步后若仍提示“没有权限”、`device-mismatch` 或 “Automated check-in detected”，再重新登录，从成功的 `/api/user/status` 请求中复制**完整单行 Cookie**（包含 `gld:sess` 与 `gld:sess.sig`）更新 `GLADOS_COOKIE`，并将同一登录浏览器的完整 User-Agent 配置为 `GLADOS_USER_AGENT`。
->
-> **同步代码不会更新个人仓库的 Secrets 和 Variables。** 请手动运行一次验证自己的配置。
->
-> 希望收到后续修复公告，可在原仓库选择 **Watch → Custom → Releases**。Fork 本身不代表订阅更新通知。
+> **历史恢复记录（2026-09-30）**：新版认证修复见 [v2026.9.30 发布说明](https://github.com/lankerr/2026-glados-checkin/releases/tag/v2026.9.30)。Fork 用户请先 **Sync fork → Update branch**；同步代码不会更新你的 Secrets，请手动跑一次验证配置。后续公告可 **Watch → Custom → Releases** 订阅。
 
 <div align="center">
 
@@ -79,7 +36,7 @@
 
 | 优势                  | 说明                                                |
 | --------------------- | --------------------------------------------------- |
-| ⚠️ **当前状态** | 存在 Turnstile 拒绝；历史成功和单元测试不代表当前签到成功 |
+| ⚠️ **当前状态** | Turnstile 时期：本地真浏览器兜底已实测；Actions 建议只读模式或转本地 |
 | ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
 | ✅ **新手友好**       | 全程图解，不会也能照着做                            |
 | ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
@@ -236,6 +193,8 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
 | `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 | `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
+| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可强制尝试（机房 IP 下基本不会通过）。 |
+| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头，通过率更高）。仅本地有意义。 |
 
 PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
 
