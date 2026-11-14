@@ -1,0 +1,77 @@
+name: Sync Upstream
+
+# 每 15 分钟把上游 lankerr/2026-glados-checkin 的最新代码同步进本 fork。
+# 使用 rebase + force push 而不是 merge：fork 始终只比上游多出自己的提交（保持 1 ahead），
+# 不会像 merge 那样每同步一次就多出一个 merge 节点。
+# 本 fork 的自有改动只有新增本文件，不改上游任何文件，因此 rebase 不会冲突。
+on:
+  schedule:
+    # GitHub cron 最小粒度 5 分钟，实际触发常有 5-20 分钟延迟。
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check upstream
+        id: check
+        run: |
+          # status 相对上游 main：ahead/identical 无需同步，behind/diverged 需要。
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/lankerr:main...main" --jq '.status')
+          echo "compare status: $status"
+          if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
+            echo "sync=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "sync=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout
+        if: steps.check.outputs.sync == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # 推送含 .github/workflows/* 的提交需要 workflow scope，GITHUB_TOKEN 不具备。
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Rebase onto upstream
+        if: steps.check.outputs.sync == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags https://github.com/lankerr/2026-glados-checkin.git main
+          # 把 fork 自有提交重放到上游最新提交之上；冲突时直接失败，不会改动远程分支。
+          git rebase FETCH_HEAD
+          git push --force-with-lease origin HEAD:main
+
+      - name: Prune old runs
+        if: always()
+        continue-on-error: true
+        run: |
+          # GitHub 没有按条数/天数自动清理的原生设置。
+          # 本 workflow 每 15 分钟一次，只保留最新 10 条；先按 createdAt 排序，不依赖返回顺序。
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow=sync-upstream.yml --limit 1000 \
+            --json databaseId,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[10:] | .[].databaseId' \
+            | xargs -r -n1 gh run delete --repo "$GITHUB_REPOSITORY"
+
+          # 签到 workflow 的文件由上游维护（改它会被同步覆盖），所以在这里清理它 3 天前的记录。
+          cutoff=$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow=checkin.yml --limit 1000 \
+            --json databaseId,createdAt \
+            --jq ".[] | select(.createdAt < \"$cutoff\") | .databaseId" \
+            | xargs -r -n1 gh run delete --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
