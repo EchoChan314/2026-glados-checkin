@@ -1,19 +1,20 @@
 # 🎁 5 分钟配置 GLaDOS 自动签到
 
 > [!WARNING]
-> **2026-11-14：签到接口接入 Cloudflare Turnstile，纯 API 请求被拒。当晚已上线修复——本地"真浏览器兜底"实测通过；GitHub Actions 机房环境仍无通用方案（浏览器模式自动禁用）。详见下方公告。**
+> **2026-11-14：已观察到 Turnstile 验证拒绝；仅有维护者单一账号一次本地浏览器测试返回 +10 的记录，不能视为通用或长期修复。Actions 默认关闭浏览器兜底；安全收紧方案 #38 尚未合并、部署或完成真实浏览器验收。**
 
 <a id="status-2026-11-14"></a>
-## 📢 2026-11-14 公告：Turnstile 拒绝与修复
+## 📢 2026-11-14 公告：Turnstile 观察结果与待修复风险
 
-**发生了什么**：11 月 14 日起签到接口返回 `code=5, reason=turnstile`（Cloudflare verification failed），纯 API 请求一律被拒；GitHub Actions 机房环境的无头浏览器尝试同样未通过（多个社区项目同日反馈一致）。
+**已观察到的问题**：维护者运行及部分社区反馈出现 `code=5, reason=turnstile`（Cloudflare verification failed）；部分 GitHub Actions 无头浏览器尝试也未通过。这些记录不足以认定所有纯 API 请求或所有机房环境都必然失败。
 
-**修复（当晚上线，已实测）**：新增 [`browser_checkin.py`](browser_checkin.py) 本地真浏览器兜底——当签到接口明确返回 `reason=turnstile` 时，自动用本机真实 Chrome（Edge → Chromium 依次回退）打开官方签到页，由**页面自身**完成 Turnstile 验证并点击签到，脚本只注入你配置的 Cookie 并读取结果。维护者本机实测约 15 秒完成验证并入账。
+**本地单次测试记录**：现有 [`browser_checkin.py`](browser_checkin.py) 在接口明确返回 `reason=turnstile` 时，尝试用本机 Chrome（Edge → Chromium 回退）打开官方签到页，由页面处理验证并点击签到。北京时间 11 月 14 日 19:35，维护者单一账号返回 `Got 10`，余额从此前 15 变为 25，已读流水观察到当日 +10；没有交易标识将流水与请求严格关联。20:30 返回重复签到，不是再次增加 10 分。以上不证明其他账号、运行环境或后续日期可用。
 
-- **适用范围**：仅限自己的电脑 + 真实浏览器。检测到 `GITHUB_ACTIONS` 时自动禁用（数据中心 IP 无法可靠通过，请勿在 Actions 上反复重试）。
-- **不是"绕过"**：人机验证仍由 Cloudflare 官方组件在真实浏览器中完成并放行；本仓库不提供打码或绕过方案。
-- **本地使用**：本机需有 Chrome 或 Edge（或执行 `python -m playwright install chromium`）→ `pip install -r requirements.txt` → 配置 `GLADOS_COOKIE` → 运行 `checkin.py`（或挂计划任务）。运行时会短暂弹出浏览器窗口，属正常流程，勿手动关闭。
-- **Actions 用户**：继续用只读模式核对（`diagnose_only` / `notify_status_only`），或转本地运行。付费/购买套餐不解决 Turnstile，请勿为排查而购买（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37) 反馈）。
+- **Actions 默认关闭**：检测到 `GITHUB_ACTIONS` 时默认不启用浏览器兜底，显式设置 `GLADOS_BROWSER_CHECKIN=1` 才会尝试。尚未验证 Actions 自动首次签到恢复；可用只读模式核对（`diagnose_only` / `notify_status_only`）。
+- **当前 main 的风险**：浏览器使用共享持久化 profile，未核验浏览器当前账号身份，存在多账号残留会话混用风险（并非已证实发生混用）；点击后丢失响应等模糊结果可能触发换域名或外层重试。未收到成功响应不等于没有提交成功，不应据此反复补签。
+- **待验收方案**：[Draft PR #38](https://github.com/lankerr/2026-glados-checkin/pull/38) 拟加入会话隔离、身份核对、模糊结果停止重试和并发防护；**尚未合并 main、未部署到现有本地调度、未完成真实浏览器/真实签到验收**。离线测试通过不代表线上已解决。
+- **本地使用边界**：不能保证“无需重新配置”；Cookie、UA、浏览器和运行环境需分别核对。验证仍由官网组件决定是否放行，不能保证成功。存在上述风险时，优先使用官网手动签到，不要为验证脚本而反复提交。
+- **付费边界**：已有自述付费账号仍遇到低分或验证失败的反馈；付款不保证固定积分或免除 Turnstile，但不能外推为所有付费账号均无效。请勿仅为排查而购买套餐（见 [#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
 
 **积分口径**：通知将"接口声称加分"与"积分流水观察"分开显示、不强行关联归属——同日同额不能证明是本次入账，历史流水也不代表本次奖励（相关讨论见 [#28](https://github.com/lankerr/2026-glados-checkin/issues/28)、[#37](https://github.com/lankerr/2026-glados-checkin/issues/37)）。
 
@@ -36,7 +37,7 @@
 
 | 优势                  | 说明                                                |
 | --------------------- | --------------------------------------------------- |
-| ⚠️ **当前状态** | Turnstile 时期：本地真浏览器兜底已实测；Actions 建议只读模式或转本地 |
+| ⚠️ **当前状态** | 单账号单次本地测试记录；Actions 浏览器兜底默认关闭；安全收紧方案待验收 |
 | ✅ **结果可信**       | 正确区分签到完成、重复签到和真实失败                |
 | ✅ **新手友好**       | 全程图解，不会也能照着做                            |
 | ✅ **作者持续维护**   | 遇到问题提Issue，作者很乐意帮忙                     |
@@ -193,8 +194,8 @@ GLaDOS 在 2026 年初进行了 API 更新，**绝大多数旧签到脚本已失
 | `TELEGRAM_CHAT_ID`   | ❌ 否 | 接收推送的 Telegram Chat ID                                                |
 | `PUSH_LEVEL`         | ❌ 否 | 推送级别：`fail_only`（默认，仅失败推送）或 `all`（每次均推送）            |
 | `EXCHANGE_PLAN`      | ❌ 否 | 积分自动兑换计划（#11）：`plan500`（默认，500 分自动兑换 100 天）、`plan200`（200 分→30 天）、`plan100`（100 分→10 天）或 `off`（关闭）。兑换结果即使 `PUSH_LEVEL=fail_only` 也会推送。 |
-| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可强制尝试（机房 IP 下基本不会通过）。 |
-| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头，通过率更高）。仅本地有意义。 |
+| `GLADOS_BROWSER_CHECKIN` | ❌ 否 | Turnstile 真浏览器兜底开关：默认开启；`0` 关闭。检测到 `GITHUB_ACTIONS` 时默认自动禁用，设 `1` 可显式尝试（尚未验证 Actions 首次签到恢复）。 |
+| `GLADOS_BROWSER_HEADLESS` | ❌ 否 | 浏览器兜底改无头模式：默认 `0`（有头）；未验证不同环境的成功率。 |
 
 PushPlus、Server酱和 Telegram 均为可选，可单独使用，也可同时配置；多个渠道配置后会分别发送同一份多账号汇总，并遵循同一个 `PUSH_LEVEL` 设置。只读诊断（`diagnose_only`）不发送推送。
 
